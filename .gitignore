@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environment
+venv/
+env/
+
+# IDEs
+.vscode/
+.idea/
+
+# Large Data Folders (Exclude these!)
+Arecanut_data/
+other_plant_data/
+data_processed/
+models/
+.cache/
+
+# Logs
+logs/
+reports/
+*.log
+*.csv
+*.png
+
+# System
+Thumbs.db
+Desktop.ini
