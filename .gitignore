@@ -10,17 +10,20 @@ env/
 # IDEs
 .vscode/
 .idea/
+.gemini/
 
-# Large Data Folders (Exclude these!)
+# Large Data Folders
 Arecanut_data/
 other_plant_data/
 data_processed/
 models/
 .cache/
 
-# Logs
+# Node
+frontend/node_modules/
+
+# Logs & Generated
 logs/
-reports/
 *.log
 *.csv
 *.png
@@ -28,3 +31,4 @@ reports/
 # System
 Thumbs.db
 Desktop.ini
+temp.jpg

@@ -1,0 +1,12 @@
+OVERALL TEST ACCURACY: 99.84%
+Correct: 3085/3090
+
+Per-Class Accuracy:
+============================================================
+Bud_Borer           :  97.22%  (35/36)
+Healthy             :  99.70%  (991/994)
+Mahali_Koleroga     : 100.00%  (641/641)
+Not_Arecanut        : 100.00%  (877/877)
+Stem_Cracking       : 100.00%  (135/135)
+Stem_bleeding       :  97.37%  (37/38)
+Yellow_Leaf_Disease : 100.00%  (369/369)

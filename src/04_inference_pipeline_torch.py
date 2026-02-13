@@ -4,7 +4,6 @@ import torch
 import torch.nn as nn
 from torchvision import models, transforms
 from PIL import Image
-import numpy as np
 import config
 
 class ArcanutSystem:
@@ -12,16 +11,14 @@ class ArcanutSystem:
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         print(f"Inference Device: {self.device}")
         
-        self.id_model_path = os.path.join(config.MODELS_DIR, 'arecanut_id_model.pth')
-        self.disease_model_path = os.path.join(config.MODELS_DIR, 'arecanut_disease_model.pth')
-        self.mapping_path = os.path.join(config.DATA_DIR, 'class_mapping.json')
+        # Single Universal Model
+        self.model_path = os.path.join(config.MODELS_DIR, 'arecanut_model.pth')
+        self.mapping_path = os.path.join(config.DATA_DIR, 'universal_mapping.json')
         
-        self.id_model = None
-        self.disease_model = None
-        self.class_mapping = None
+        self.model = None
         self.idx_to_class = None
         
-        # Define Transforms
+        # Define Transforms (Same as training)
         self.transform = transforms.Compose([
             transforms.Resize((224, 224)),
             transforms.ToTensor(),
@@ -30,89 +27,76 @@ class ArcanutSystem:
 
     def load_models(self):
         try:
-            # 1. Load Identification Model
-            print("Loading Identification Model...")
-            self.id_model = models.mobilenet_v3_small(weights=None)
-            self.id_model.classifier[3] = nn.Linear(self.id_model.classifier[3].in_features, 1)
-            self.id_model.load_state_dict(torch.load(self.id_model_path, map_location=self.device))
-            self.id_model.to(self.device)
-            self.id_model.eval()
-            
-            # 2. Load Class Mapping
+            # 1. Load Universal Mapping
             if os.path.exists(self.mapping_path):
                 with open(self.mapping_path, 'r') as f:
-                    self.class_mapping = json.load(f)
-                # Invert mapping: {0: 'Healthy', ...}
-                self.idx_to_class = {v: k for k, v in self.class_mapping.items()}
-                num_classes = len(self.class_mapping)
+                    class_mapping = json.load(f)
+                # Invert: {0: 'Bud_Borer', 3: 'Not_Arecanut', ...}
+                self.idx_to_class = {v: k for k, v in class_mapping.items()}
+                num_classes = len(class_mapping)
+                print(f"Loaded {num_classes} classes mapping.")
             else:
-                print("Warning: Class mapping not found. Disease model might fail.")
-                num_classes = 6 # Default fallback
+                raise FileNotFoundError("universal_mapping.json not found! Train the model first.")
             
-            # 3. Load Disease Model
-            print("Loading Disease Model...")
-            self.disease_model = models.mobilenet_v3_small(weights=None)
-            self.disease_model.classifier[3] = nn.Linear(self.disease_model.classifier[3].in_features, num_classes)
-            self.disease_model.load_state_dict(torch.load(self.disease_model_path, map_location=self.device))
-            self.disease_model.to(self.device)
-            self.disease_model.eval()
+            # 2. Load Single Model
+            print(f"Loading Universal Model from {self.model_path}...")
+            self.model = models.mobilenet_v3_small(weights=None)
+            self.model.classifier[3] = nn.Linear(self.model.classifier[3].in_features, num_classes)
+            
+            self.model.load_state_dict(torch.load(self.model_path, map_location=self.device))
+            self.model.to(self.device)
+            self.model.eval()
+            print("Model loaded successfully.")
             
         except Exception as e:
-            print(f"Error loading models: {e}")
+            print(f"Error loading model: {e}")
 
     def predict(self, image_path):
-        if self.id_model is None or self.disease_model is None:
+        if self.model is None:
             self.load_models()
 
         try:
+            # Preprocess
             image = Image.open(image_path).convert('RGB')
             img_tensor = self.transform(image).unsqueeze(0).to(self.device)
             
-            # 1. Identification
+            # Inference
             with torch.no_grad():
-                output = self.id_model(img_tensor)
-                prob = torch.sigmoid(output).item()
-                
-            results = {
-                'is_arecanut_prob': prob,
-                'is_arecanut': prob > 0.5,
-                'message': '',
-                'disease': None,
-                'disease_confidence': 0.0
-            }
-            
-            if not results['is_arecanut']:
-                results['message'] = f"Not Arecanut (Confidence: {(1-prob)*100:.2f}%)"
-                return results
-            
-            results['message'] = f"Arecanut Verified (Confidence: {prob*100:.2f}%)"
-            
-            # 2. Disease Classification
-            with torch.no_grad():
-                output = self.disease_model(img_tensor)
-                probs = torch.softmax(output, dim=1)
-                conf, pred_idx = torch.max(probs, 1)
+                outputs = self.model(img_tensor)
+                probs = torch.softmax(outputs, dim=1)
+                confidence, pred_idx = torch.max(probs, 1)
                 
             pred_idx = pred_idx.item()
-            conf = conf.item()
+            confidence = confidence.item()
+            class_name = self.idx_to_class[pred_idx]
             
-            disease_name = self.idx_to_class.get(pred_idx, "Unknown")
+            # Structure the Result
+            result = {
+                'class_name': class_name,
+                'confidence': confidence,
+                'is_arecanut': True, # Default Assume True
+                'message': '',
+                'disease': None
+            }
             
-            results['disease'] = disease_name
-            results['disease_confidence'] = conf
-            results['final_output'] = f"{disease_name} ({conf*100:.2f}%)"
+            # Logic: Handle "Not_Arecanut"
+            if class_name == 'Not_Arecanut':
+                result['is_arecanut'] = False
+                result['message'] = f"Non-Arecanut Plant Detected ({confidence*100:.1f}%)"
+                return result
             
-            return results
+            # Logic: It IS Arecanut
+            result['is_arecanut'] = True
+            result['disease'] = class_name
+            result['message'] = f"Arecanut Detected: {class_name}"
+            
+            return result
             
         except Exception as e:
             return {'error': str(e)}
 
 if __name__ == "__main__":
-    import sys
-    sys_path = sys.argv[1] if len(sys.argv) > 1 else None
-    
     system = ArcanutSystem()
-    if sys_path:
-        print(system.predict(sys_path))
-    else:
-        print("Provide image path.")
+    system.load_models()
+    # Test with dummy path if running directly
+    print("System initialized. Call predict(image_path) to use.")
